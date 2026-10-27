@@ -1,15 +1,24 @@
+![Bing Bong boarding pass — Your prompt has landed](docs/assets/boarding-pass.svg)
+
 # bing-bong ✈️
 
-> *bing… bong.* Your prompt has landed. You are now free to move about the cabin.
+**Your prompt has landed.** An airline-style seatbelt chime plays when Claude Code finishes responding, so you can look away from the terminal and hear when the turn is done.
 
-**bing-bong** plays the airline seatbelt-sign chime every time Claude Code finishes
-responding — so you can alt-tab away, and your ears tell you when it's done.
+**[🔊 Listen](sounds/seatbelt-chime.wav)** · **[⌨️ Install](#install)** · **[🧭 Hook flow](#flow)** · **[🎛️ Customise](#customise)** · **[🧳 Uninstall](#uninstall)**
 
-The chime is a warm two-tone descending "bing-bong" (660 Hz → 520 Hz), synthesized
-from scratch in [`make_chime.py`](make_chime.py). No copyrighted airline audio,
-just math that sounds like a Boeing.
+## 🔊 Two notes. One small notification.
 
-## Install
+![Peak-amplitude waveform of the bundled chime, from the first tone through the gap to the second tone](docs/assets/waveform.svg)
+
+**[Play or download the bundled chime](sounds/seatbelt-chime.wav)** — 0.96 seconds, mono, 44.1 kHz, 16-bit WAV.
+
+The sound is synthesized from scratch in [`make_chime.py`](make_chime.py): a descending **660 Hz → 520 Hz** pair. The waveform above comes from the actual bundled file. No copyrighted airline recording is included.
+
+<a id="install"></a>
+
+## ⌨️ Board from the terminal
+
+Use a Bash environment with Python 3 and one of the audio players listed below.
 
 ```bash
 git clone https://github.com/Piyushmishra29/bing-bong.git
@@ -17,55 +26,104 @@ cd bing-bong
 ./install.sh
 ```
 
-That's it. The installer:
+The installer copies the sound, creates a portable player, registers the Stop hook, and plays a test chime. It can be rerun to update an older chime hook.
 
-1. copies the chime to `~/.claude/sounds/`
-2. drops a tiny player script (`~/.claude/sounds/bing-bong`) that auto-detects
-   your audio player — PipeWire (`pw-play`), PulseAudio (`paplay`), ALSA
-   (`aplay`), macOS (`afplay`), or `ffplay` as a last resort
-3. registers a **Stop hook** in `~/.claude/settings.json` so the chime fires
-   whenever Claude Code finishes a turn
-4. plays it once so you know it worked
+| Installed item | Purpose |
+|---|---|
+| `~/.claude/sounds/seatbelt-chime.wav` | The notification sound. |
+| `~/.claude/sounds/bing-bong` | A small Bash player that chooses an available audio command. |
+| `~/.claude/settings.json` | Receives the Stop hook that launches the player in the background. |
 
-Idempotent — safe to re-run. It also upgrades any older hard-coded chime hook
-to the portable player script.
+<a id="flow"></a>
 
-## Uninstall
+## 🧭 From finished turn to chime
 
-```bash
-./uninstall.sh          # removes the hook, keeps the sound files
-./uninstall.sh --purge  # removes everything
+```mermaid
+flowchart LR
+    A["Claude Code finishes a turn"] --> B["Stop hook"]
+    B --> C["bing-bong player"]
+    C --> D{"WAV and player available?"}
+    D -- Yes --> E["Play the two-tone chime"]
+    D -- No --> F["Exit quietly"]
+    classDef sky fill:#e7f1f9,stroke:#245d82,color:#102a43
+    classDef ticket fill:#fff0df,stroke:#c9792c,color:#42270d
+    class A,B,C sky
+    class E ticket
 ```
 
-## Bring your own sound
+The installer registers the equivalent of this [Claude Code hook](https://docs.anthropic.com/en/docs/claude-code/hooks):
 
-Any 16-bit WAV works. Replace `~/.claude/sounds/seatbelt-chime.wav` with your
-own file and keep the name — or edit the hook in `~/.claude/settings.json` to
-point somewhere else.
+```json
+{
+  "hooks": {
+    "Stop": [{
+      "hooks": [{
+        "type": "command",
+        "command": "$HOME/.claude/sounds/bing-bong &"
+      }]
+    }]
+  }
+}
+```
 
-Want to tweak the chime itself? Edit the frequencies/decay in `make_chime.py`
-and regenerate:
+The `&` makes playback asynchronous. Player output is suppressed; a missing sound file or missing audio command exits quietly. The installer writes the resolved player path into the actual settings file.
+
+### 🎧 Audio-player fallback order
+
+The installed script tries the first available command in this order:
+
+| Priority | Player | Typical environment |
+|---|---|---|
+| 1 | `pw-play` | PipeWire |
+| 2 | `paplay` | PulseAudio |
+| 3 | `afplay` | macOS |
+| 4 | `aplay` | ALSA |
+| 5 | `ffplay` | FFmpeg fallback |
+
+This is command discovery, not a live audio-device health check. If the installer is silent, confirm that the selected player and your output device can play the WAV.
+
+<a id="customise"></a>
+
+## 🎛️ Tune the cabin sound
+
+The synthesizer keeps the sound small and reproducible:
+
+| Ingredient | In the source |
+|---|---|
+| First / second tone | 660 Hz / 520 Hz |
+| Each tone | 0.45 seconds |
+| Gap | 0.06 seconds |
+| Attack | 0.005 seconds |
+| Envelope | Exponential decay after the short attack |
+| Timbre | Fundamental plus a subtle second harmonic |
+
+Edit the frequencies or envelope in `make_chime.py`, then regenerate and reinstall:
 
 ```bash
 python3 make_chime.py
 ./install.sh
 ```
 
-## How it works
+To use your own sound, replace `~/.claude/sounds/seatbelt-chime.wav` with a 16-bit WAV, keeping that filename. Alternatively, change the hook command to your own player or file.
 
-Claude Code runs [hooks](https://docs.anthropic.com/en/docs/claude-code/hooks)
-at lifecycle events. `Stop` fires when the agent finishes responding. The hook
-is one line:
+<a id="uninstall"></a>
 
-```json
-{ "hooks": { "Stop": [ { "hooks": [ { "type": "command",
-  "command": "$HOME/.claude/sounds/bing-bong &" } ] } ] } }
+## 🧳 Leave the cabin quiet
+
+```bash
+./uninstall.sh          # Remove the hook; keep the sound and player
+./uninstall.sh --purge  # Also remove the installed sound and player
 ```
 
-The player script backgrounds itself and swallows all output, so it can never
-slow down or break a session — worst case on a machine with no audio player,
-it exits silently.
+The uninstaller removes hook commands matching `bing-bong` or `seatbelt-chime`, cleans up empty hook groups, and preserves the other settings.
 
----
+## 🛠️ Four pieces, no mystery
+
+```text
+install.sh                 Install the sound, player and hook
+uninstall.sh               Remove the hook; optionally purge files
+make_chime.py              Synthesize the two tones with Python's standard library
+sounds/seatbelt-chime.wav   The ready-to-play result
+```
 
 *Cabin crew, doors to manual and cross-check.* 🛬
